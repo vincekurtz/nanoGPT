@@ -246,6 +246,7 @@ if wandb_log and master_process:
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
 t0 = time.time()
+train_start_time = time.time()
 local_iter_num = 0 # number of iterations in the lifetime of this process
 raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
@@ -329,6 +330,10 @@ while True:
     # termination conditions
     if iter_num > max_iters:
         break
+
+train_time_seconds = time.time() - train_start_time
+train_time_min = train_time_seconds / 60
+print(f"training complete in {train_time_min:.2f} minutes")
 
 if ddp:
     destroy_process_group()
