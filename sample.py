@@ -79,27 +79,29 @@ if start.startswith('FILE:'):
     with open(start[5:], 'r', encoding='utf-8') as f:
         start = f.read()
 start_ids = encode(start)
-y = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
 # run generation
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
-            #y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
-            #print(decode(y[0].tolist()))
+            # Reset the initial prompt
+            y = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
+            reset_interval = 4
             for t in range(max_new_tokens):
-                # Set the input window
-                x = y if y.size(1) <= model.config.block_size else y[:,-model.config.block_size:]
+                if t % reset_interval == 0:  # reset the lifting
+                    # Set the input window
+                    x = y if y.size(1) <= model.config.block_size else y[:,-model.config.block_size:]
 
-                # Lift to embedding state
-                z = model.phi(x)   # batch, timestep, embedded state
+                    # Lift to embedding state
+                    z = model.phi(x)   # batch, timestep, embedded state
+                    z = z[:,-1,:]  # just look at the last time step
 
                 # Use Koopman approximation to flow forward in embedding space
-                z_next = model.A(z[:,-1,:])  # we care about the last timestep only
+                z = model.A(z)
 
                 # Project down to state space (logits)
-                logits_next = model.C(z_next)
+                logits_next = model.C(z)
 
                 # Take samples
                 probs = F.softmax(logits_next, dim=-1)
