@@ -130,12 +130,18 @@ class GPT(nn.Module):
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
         ))
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        # linear dynamics in the lifted space, e.g., Koopman approximation
+        self.A = nn.Linear(config.n_embd, config.n_embd, bias=False)
+
+        # mapping from the lifted space (embedding) to output space (word
+        # probabilities)
+        self.C = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
         # This behavior is deprecated and will be an error in future versions"
         # not 100% sure what this is, so far seems to be harmless. TODO investigate
-        self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
+        #self.transformer.wte.weight = self.lm_head.weight # https://paperswithcode.com/method/weight-tying
 
         # init all weights
         self.apply(self._init_weights)
@@ -179,18 +185,29 @@ class GPT(nn.Module):
         x = self.transformer.drop(tok_emb + pos_emb)
         for block in self.transformer.h:
             x = block(x)
-        x = self.transformer.ln_f(x)
+        z = self.transformer.ln_f(x) # use notation of a "lifted state" a la Koopman
 
+        z_next = self.A(z)
+
+        # if we are given some desired targets also calculate the loss
         if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            logits = self.lm_head(x)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+            # Reconstruction loss
+            reconstruction_logits = self.C(z)[:, 1:, :].contiguous()  # batch, time, probability
+            reconstruction_targets = targets[:, 0:-1].contiguous()
+
+            loss = F.cross_entropy(
+                    reconstruction_logits.view(-1, reconstruction_logits.size(-1)),
+                reconstruction_targets.view(-1), ignore_index=-1)
+
+            #logits = self.C(z_next)
+            #loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.lm_head(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            reconstruction_logits = self.C(z[:,[-1],:])
+            #logits = self.C(z_next[:, [-1], :]) # note: using list [-1] to preserve the time dim
             loss = None
 
-        return logits, loss
+        return reconstruction_logits, loss
 
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
