@@ -192,22 +192,27 @@ class GPT(nn.Module):
         # if we are given some desired targets also calculate the loss
         if targets is not None:
             # Reconstruction loss
-            reconstruction_logits = self.C(z)[:, 1:, :].contiguous()  # batch, time, probability
+            reconstruction_logits = self.C(z)[:, 1:, :].contiguous()  # batch, time, likelihood
             reconstruction_targets = targets[:, 0:-1].contiguous()
 
-            loss = F.cross_entropy(
+            reconstruction_loss = F.cross_entropy(
                     reconstruction_logits.view(-1, reconstruction_logits.size(-1)),
                 reconstruction_targets.view(-1), ignore_index=-1)
 
-            #logits = self.C(z_next)
+            # Prediction loss
+            prediction_logits = self.C(z_next)
+            prediction_loss = F.cross_entropy(
+                    prediction_logits.view(-1, prediction_logits.size(-1)),
+                    targets.view(-1), ignore_index=-1)
+
+            loss = reconstruction_loss + prediction_loss
             #loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
-            # inference-time mini-optimization: only forward the lm_head on the very last position
-            reconstruction_logits = self.C(z[:,[-1],:])
-            #logits = self.C(z_next[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            # inference-time mini-optimization: only predict on the very last position
+            prediction_logits = self.C(z_next[:,[-1],:])
             loss = None
 
-        return reconstruction_logits, loss
+        return prediction_logits, loss
 
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
