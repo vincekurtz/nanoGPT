@@ -5,6 +5,7 @@ import os
 import pickle
 from contextlib import nullcontext
 import torch
+from torch.nn import functional as F
 import tiktoken
 from model import GPTConfig, GPT
 
@@ -12,7 +13,7 @@ from model import GPTConfig, GPT
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
 out_dir = 'out' # ignored if init_from is not 'resume'
 start = "\nAnd so" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
-num_samples = 10 # number of samples to draw
+num_samples = 2  # number of samples to draw
 max_new_tokens = 500 # number of tokens generated in each sample
 temperature = 0.8 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
 top_k = 200 # retain only the top_k most likely tokens, clamp others to have 0 probability
@@ -78,12 +79,35 @@ if start.startswith('FILE:'):
     with open(start[5:], 'r', encoding='utf-8') as f:
         start = f.read()
 start_ids = encode(start)
-x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+y = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
 # run generation
 with torch.no_grad():
     with ctx:
         for k in range(num_samples):
-            y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            #y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            #print(decode(y[0].tolist()))
+
+            for t in range(max_new_tokens):
+                # Set the input window
+                x = y if y.size(1) <= model.config.block_size else y[:,-model.config.block_size:]
+
+                # Lift to embedding state
+                z = model.phi(x)   # batch, timestep, embedded state
+
+                # Use Koopman approximation to flow forward in embedding space
+                z_next = model.A(z[:,-1,:])  # we care about the last timestep only
+
+                # Project down to state space (logits)
+                logits_next = model.C(z_next)
+
+                # Take samples
+                probs = F.softmax(logits_next, dim=-1)
+                y_next = torch.multinomial(probs, num_samples=1)
+
+                # Add to the generated output sequence
+                y = torch.cat((y, y_next), dim=1)
+
             print(decode(y[0].tolist()))
+
             print('---------------')

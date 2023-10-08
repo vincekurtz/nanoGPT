@@ -173,7 +173,11 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None):
+    def phi(self, idx):
+        """
+        Convienience function for doing the lifting from the "state" idx (a
+        sequence of letter indices) to the embedding state z. 
+        """
         device = idx.device
         b, t = idx.size()
         assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
@@ -185,8 +189,13 @@ class GPT(nn.Module):
         x = self.transformer.drop(tok_emb + pos_emb)
         for block in self.transformer.h:
             x = block(x)
-        z = self.transformer.ln_f(x) # use notation of a "lifted state" a la Koopman
+        return self.transformer.ln_f(x)
 
+    def forward(self, idx, targets=None):
+        # Lift from history of letter indexes to embedding state
+        z = self.phi(idx)
+
+        # Advance the embedding state with the approximate Koopman operator
         z_next = self.A(z)
 
         # if we are given some desired targets also calculate the loss
@@ -199,6 +208,8 @@ class GPT(nn.Module):
                     reconstruction_logits.view(-1, reconstruction_logits.size(-1)),
                 reconstruction_targets.view(-1), ignore_index=-1)
 
+            # TODO: manifold coherence loss phi(x_next) - A phi(x)
+
             # Prediction loss
             prediction_logits = self.C(z_next)
             prediction_loss = F.cross_entropy(
@@ -206,7 +217,6 @@ class GPT(nn.Module):
                     targets.view(-1), ignore_index=-1)
 
             loss = reconstruction_loss + prediction_loss
-            #loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
         else:
             # inference-time mini-optimization: only predict on the very last position
             prediction_logits = self.C(z_next[:,[-1],:])
