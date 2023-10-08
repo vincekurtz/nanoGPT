@@ -212,7 +212,7 @@ class GPT(nn.Module):
             x_next = idx[:, 1:]
             z_next_direct = self.phi(x_next)
             z_next_flowed = z_next[:, 1:, :]
-            flow_loss = F.mse_loss(z_next_flowed, z_next_direct)
+            flow_loss = 10 * F.mse_loss(z_next_flowed, z_next_direct)
 
             # Prediction loss
             prediction_logits = self.C(z_next)
