@@ -225,8 +225,11 @@ class GPT(nn.Module):
             # inference-time mini-optimization: only predict on the very last position
             prediction_logits = self.C(z_next[:,[-1],:])
             loss = None
+            reconstruction_loss = None
+            flow_loss = None
+            prediction_loss = None
 
-        return prediction_logits, loss
+        return prediction_logits, loss, reconstruction_loss, flow_loss, prediction_loss
 
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
