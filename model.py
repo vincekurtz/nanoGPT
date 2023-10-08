@@ -209,10 +209,11 @@ class GPT(nn.Module):
                 reconstruction_targets.view(-1), ignore_index=-1)
 
             # manifold coherence loss phi(x_next) - A phi(x)
-            x_next = idx[:, 1:]
-            z_next_direct = self.phi(x_next)
-            z_next_flowed = z_next[:, 1:, :]
-            flow_loss = F.mse_loss(z_next_flowed, z_next_direct)
+            #x_next = idx[:, 1:]
+            #z_next_direct = self.phi(x_next)
+            #z_next_flowed = z_next[:, 1:, :]
+            #flow_loss = F.mse_loss(z_next_flowed, z_next_direct)
+            flow_loss = F.mse_loss(z[:,1:,:], z_next[:,:-1,:])
 
             # Prediction loss
             prediction_logits = self.C(z_next)
