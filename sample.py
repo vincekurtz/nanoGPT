@@ -87,7 +87,7 @@ with torch.no_grad():
             # Reset the initial prompt
             y = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
-            reset_interval = 4
+            reset_interval = 2
             for t in range(max_new_tokens):
                 if t % reset_interval == 0:  # reset the lifting
                     # Set the input window
