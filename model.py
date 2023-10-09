@@ -198,48 +198,57 @@ class GPT(nn.Module):
         # Advance the embedding state with the approximate Koopman operator
         z_next = self.A(z)
 
+        losses = {
+                "total_loss" : None, 
+                "reconstruction_loss" : None,
+                "flow_loss" : None, 
+                "prediction_losses": []
+                }
+
         # if we are given some desired targets also calculate the loss
         if targets is not None:
             # Reconstruction loss
             reconstruction_logits = self.C(z)[:, 1:, :].contiguous()  # batch, time, likelihood
             reconstruction_targets = targets[:, 0:-1].contiguous()
-
             reconstruction_loss = F.cross_entropy(
                     reconstruction_logits.view(-1, self.config.vocab_size),
                 reconstruction_targets.view(-1), ignore_index=-1)
+            losses["reconstruction_loss"] = reconstruction_loss
 
             # manifold coherence loss phi(x_next) - A phi(x)
             flow_loss = 10 * F.mse_loss(z[:,1:,:], z_next[:,:-1,:])
+            losses["flow_loss"] = flow_loss
 
-            # Prediction loss
+            # Prediction loss for next step
             prediction_logits = self.C(z_next)
             prediction_loss = F.cross_entropy(
                     prediction_logits.view(-1, self.config.vocab_size),
                     targets.view(-1), ignore_index=-1)
+            losses["prediction_losses"].append(prediction_loss)
 
-            # Multistep prediction loss
-            next_pred_loss = 0
-            num_prediction_steps = self.config.block_size-2
-            gamma = 0.9
+            # Prediction loss for several steps
+            num_prediction_steps = self.config.block_size-1
+            gamma = 1.0
             z = self.A(z)
             for t in range(1, num_prediction_steps):
                 z = self.A(z)
                 next_pred_logits = self.C(z)[:,0:-t].contiguous()
                 next_pred_targets = targets[:,t:].contiguous()
-                next_pred_loss += gamma**t * F.cross_entropy(
+                next_pred_loss = gamma**t * F.cross_entropy(
                         next_pred_logits.view(-1, self.config.vocab_size),
                         next_pred_targets.view(-1), ignore_index=-1)
+                losses["prediction_losses"].append(next_pred_loss)
 
-            loss = reconstruction_loss + prediction_loss + flow_loss + next_pred_loss
+            # Combine all the losses
+            losses["total_loss"] = reconstruction_loss + flow_loss
+            for t in range(num_prediction_steps):
+                losses["total_loss"] += losses["prediction_losses"][t]
+
         else:
             # inference-time mini-optimization: only predict on the very last position
             prediction_logits = self.C(z_next[:,[-1],:])
-            loss = None
-            reconstruction_loss = None
-            flow_loss = None
-            prediction_loss = None
 
-        return prediction_logits, loss, reconstruction_loss, flow_loss, prediction_loss
+        return prediction_logits, losses["total_loss"], losses
 
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
