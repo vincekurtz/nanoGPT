@@ -327,7 +327,8 @@ while True:
         flow_loss = loss_dict["flow_loss"]
         pred_loss = loss_dict["prediction_losses"]
 
-        print(f"iter {iter_num}: loss {lossf:.4f}, rec_loss {rec_loss:.4f}, flow_loss {flow_loss:.4f}, pred_loss[0] {pred_loss[0]:.4f}, pred_loss[10] {pred_loss[10]:.4f}")
+        print(f"iter {iter_num}: loss {lossf:.4f}, rec {rec_loss:.4f}, flow {flow_loss:.4f}, pred",
+              [f"{pred_loss[i]:.1f}" for i in range(7)])
     iter_num += 1
     local_iter_num += 1
 

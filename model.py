@@ -216,7 +216,7 @@ class GPT(nn.Module):
             losses["reconstruction_loss"] = reconstruction_loss
 
             # manifold coherence loss phi(x_next) - A phi(x)
-            flow_loss = 10 * F.mse_loss(z[:,1:,:], z_next[:,:-1,:])
+            flow_loss = 1 * F.mse_loss(z[:,1:,:], z_next[:,:-1,:])
             losses["flow_loss"] = flow_loss
 
             # Prediction loss for next step
@@ -227,7 +227,7 @@ class GPT(nn.Module):
             losses["prediction_losses"].append(prediction_loss)
 
             # Prediction loss for several steps
-            num_prediction_steps = self.config.block_size-1
+            num_prediction_steps = 7
             gamma = 1.0
             z = self.A(z)
             for t in range(1, num_prediction_steps):
