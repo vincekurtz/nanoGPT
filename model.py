@@ -205,7 +205,7 @@ class GPT(nn.Module):
             reconstruction_targets = targets[:, 0:-1].contiguous()
 
             reconstruction_loss = F.cross_entropy(
-                    reconstruction_logits.view(-1, reconstruction_logits.size(-1)),
+                    reconstruction_logits.view(-1, self.config.vocab_size),
                 reconstruction_targets.view(-1), ignore_index=-1)
 
             # manifold coherence loss phi(x_next) - A phi(x)
@@ -214,10 +214,23 @@ class GPT(nn.Module):
             # Prediction loss
             prediction_logits = self.C(z_next)
             prediction_loss = F.cross_entropy(
-                    prediction_logits.view(-1, prediction_logits.size(-1)),
+                    prediction_logits.view(-1, self.config.vocab_size),
                     targets.view(-1), ignore_index=-1)
 
-            loss = reconstruction_loss + prediction_loss + flow_loss
+            # Multistep prediction loss
+            next_pred_loss = 0
+            num_prediction_steps = self.config.block_size-2
+            gamma = 0.9
+            z = self.A(z)
+            for t in range(1, num_prediction_steps):
+                z = self.A(z)
+                next_pred_logits = self.C(z)[:,0:-t].contiguous()
+                next_pred_targets = targets[:,t:].contiguous()
+                next_pred_loss += gamma**t * F.cross_entropy(
+                        next_pred_logits.view(-1, self.config.vocab_size),
+                        next_pred_targets.view(-1), ignore_index=-1)
+
+            loss = reconstruction_loss + prediction_loss + flow_loss + next_pred_loss
         else:
             # inference-time mini-optimization: only predict on the very last position
             prediction_logits = self.C(z_next[:,[-1],:])
